@@ -1,15 +1,16 @@
 const express = require('express');
 const router = express.Router();
 const Book = require('../models/Book');
-// If your Book model path is different, change line above to:
-// const Book = require('../models/bookModel');
 
-// =========== GET ALL BOOKS ===========
+// =========== GET ALL BOOKS - USER APP USES THIS ===========
 router.get('/', async (req, res) => {
   try {
+    console.log("📚 GET /api/books - Fetching from MongoDB");
     const books = await Book.find().sort({ createdAt: -1 });
-    res.json(books);
+    console.log(`✅ Found ${books.length} books in MongoDB`);
+    res.json(books); // Must be array for user app
   } catch (e) {
+    console.error("❌ GET books error:", e);
     res.status(500).json({ error: e.message });
   }
 });
@@ -25,77 +26,70 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// =========== ADD BOOK - ONE PDF + MANY CHAPTERS (Page Numbers) ===========
-/*
-  Expected Body:
-  {
-    "title": "Sahih Al-Bukhari",
-    "author": "Imam Bukhari",
-    "pdfUrl": "https://almaas-books.s3.filebase.com/xyz.pdf",
-    "coverUrl": "https://...",
-    "totalPages": 800,
-    "chapters": [
-      { "title": "Kitab Al-Wahy", "startPage": 1, "endPage": 20 },
-      { "title": "Kitab Al-Iman", "startPage": 21, "endPage": 55 }
-    ]
-  }
-*/
+// =========== ADD BOOK - ONE PDF + MANY CHAPTERS ===========
 router.post('/', async (req, res) => {
   try {
-    const { 
-      title, 
-      titleArabic, 
-      author, 
-      description, 
-      coverUrl, 
-      pdfUrl, 
-      filebaseKey, 
-      totalPages, 
-      chapters, 
-      category 
-    } = req.body;
+    console.log("📥 POST /api/books - Body:", JSON.stringify(req.body).substring(0, 500));
 
-    if (!title || !author) {
-      return res.status(400).json({ error: "title and author required" });
-    }
-    if (!pdfUrl) {
-      return res.status(400).json({ error: "pdfUrl required! Upload PDF to /api/upload first" });
-    }
-
-    // Validate chapters page numbers
-    if (chapters && chapters.length > 0) {
-      for (let ch of chapters) {
-        if (!ch.title || !ch.startPage || !ch.endPage) {
-          return res.status(400).json({ error: "Each chapter needs title, startPage, endPage" });
-        }
-        if (ch.startPage > ch.endPage) {
-          return res.status(400).json({ error: `Chapter ${ch.title}: startPage cannot be > endPage` });
-        }
-      }
-    }
-
-    const newBook = new Book({
+    const {
       title,
       titleArabic,
       author,
       description,
       coverUrl,
-      pdfUrl,          // ONE PDF ONLY
+      pdfUrl,
       filebaseKey,
       totalPages,
-      chapters: chapters || [], // Just page ranges!
+      chapters,
+      category
+    } = req.body;
+
+    if (!title ||!author) {
+      return res.status(400).json({ error: "title and author required" });
+    }
+    if (!pdfUrl) {
+      console.log("❌ pdfUrl missing! Did you call /api/upload first?");
+      return res.status(400).json({ error: "pdfUrl required! Upload PDF to /api/upload first" });
+    }
+
+    // Validate chapters
+    if (chapters && chapters.length > 0) {
+      for (let ch of chapters) {
+        if (!ch.title || ch.startPage == null || ch.endPage == null) {
+          return res.status(400).json({ error: `Chapter ${ch.title || 'unknown'}: needs title, startPage, endPage` });
+        }
+        if (ch.startPage > ch.endPage) {
+          return res.status(400).json({ error: `Chapter ${ch.title}: startPage > endPage` });
+        }
+      }
+    }
+
+    const newBook = new Book({
+      title: title.trim(),
+      titleArabic: titleArabic || "",
+      author: author.trim(),
+      description: description || "",
+      coverUrl: coverUrl || "",
+      pdfUrl, // ONE PDF from Filebase
+      filebaseKey: filebaseKey || "",
+      totalPages: totalPages || 0,
+      chapters: chapters || [],
       category: category || "Islamic"
     });
 
     const savedBook = await newBook.save();
-    
-    res.status(201).json({ 
-      message: "Book created successfully ✅ Option 1",
-      book: savedBook 
-    });
+
+    console.log(`✅ Book SAVED to MongoDB: ${savedBook._id} - ${savedBook.title}`);
+
+    // IMPORTANT: Return direct book for Flutter compatibility
+    res.status(201).json(savedBook);
 
   } catch (e) {
-    console.error(e);
+    console.error("❌ POST /api/books error:", e);
+    // If MongoDB not connected, you will see error here!
+    if (e.message.includes('buffering timed out') || e.message.includes('not connected')) {
+      return res.status(500).json({ error: "MongoDB not connected! Check MONGODB_URI env" });
+    }
     res.status(500).json({ error: e.message });
   }
 });
@@ -103,11 +97,7 @@ router.post('/', async (req, res) => {
 // =========== UPDATE BOOK CHAPTERS ===========
 router.put('/:id', async (req, res) => {
   try {
-    const updated = await Book.findByIdAndUpdate(
-      req.params.id, 
-      req.body, 
-      { new: true }
-    );
+    const updated = await Book.findByIdAndUpdate(req.params.id, req.body, { new: true });
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: e.message });
