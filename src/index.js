@@ -29,9 +29,9 @@ mongoose.connect(process.env.MONGO_URI)
   .catch(err => console.log("❌ MongoDB Error:", err));
 
 // Routes
-const bookRoutes = require('./routes/books');
+const bookRoutes = require('./routes/bookRoutes');
 const uploadRoutes = require('./routes/upload'); // Make sure this file exists
-const authRoutes = require('./routes/auth');
+const authRoutes = require('./routes/authRoutes');
 
 app.use('/api/books', bookRoutes);
 app.use('/api', uploadRoutes); // This gives you /api/upload
