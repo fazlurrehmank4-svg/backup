@@ -1,6 +1,6 @@
 const express = require('express');
 const multer = require('multer');
-const { S3Client, PutObjectCommand } = require('@aws-sdk/client-s3');
+const { createClient } = require('@supabase/supabase-js');
 require('dotenv').config();
 
 const router = express.Router();
@@ -14,38 +14,52 @@ const upload = multer({
   },
 });
 
-const s3Client = new S3Client({
-  endpoint: 'https://s3.filebase.io',
-  region: 'auto',
-  credentials: {
-    accessKeyId: process.env.FILEBASE_ACCESS_KEY,
-    secretAccessKey: process.env.FILEBASE_SECRET_KEY,
-  },
-  forcePathStyle: true,
-});
+// Supabase client - Use service_role for upload
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
 
 router.post('/upload', upload.single('pdf'), async (req, res) => {
   try {
-    console.log('📥 PDF:', req.file?.originalname, (req.file.size/1024/1024).toFixed(2)+'MB');
-    console.log('Bucket:', process.env.FILEBASE_BUCKET);
+    if (!req.file) return res.status(400).json({ success: false, error: "No PDF, field must be 'pdf'" });
 
-    if (!req.file) return res.status(400).json({ error: "No file, field must be 'pdf'" });
+    const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const fileName = `books/${Date.now()}-${safeName}`;
 
-    const key = `books/${Date.now()}-${req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '-')}`;
-    
-    await s3Client.send(new PutObjectCommand({
-      Bucket: process.env.FILEBASE_BUCKET,
-      Key: key,
-      Body: req.file.buffer,
-      ContentType: 'application/pdf',
-    }));
+    console.log('📥 Uploading to Supabase:', fileName, (req.file.size/1024/1024).toFixed(2)+'MB');
 
-    const url = `https://${process.env.FILEBASE_BUCKET}.s3.filebase.io/${key}`;
-    console.log('✅ SUCCESS', url);
-    return res.json({ success: true, url, pdfUrl: url });
+    const { data, error } = await supabase.storage
+      .from(process.env.SUPABASE_BUCKET || 'almaas-pdfs')
+      .upload(fileName, req.file.buffer, {
+        contentType: 'application/pdf',
+        upsert: false,
+      });
+
+    if (error) {
+      console.error('❌ Supabase error:', error);
+      return res.status(500).json({ success: false, error: error.message });
+    }
+
+    // Get public URL
+    const { data: publicUrlData } = supabase.storage
+      .from(process.env.SUPABASE_BUCKET || 'almaas-pdfs')
+      .getPublicUrl(fileName);
+
+    const publicUrl = publicUrlData.publicUrl;
+
+    console.log('✅ SUCCESS:', publicUrl);
+    return res.json({
+      success: true,
+      url: publicUrl,
+      pdfUrl: publicUrl,
+      fileUrl: publicUrl,
+      key: fileName,
+    });
+
   } catch (e) {
-    console.error('❌ ERROR', e.name, e.message);
-    return res.status(500).json({ error: e.message, code: e.name });
+    console.error('❌ ERROR', e.message);
+    return res.status(500).json({ success: false, error: e.message });
   }
 });
 
