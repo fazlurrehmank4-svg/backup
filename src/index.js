@@ -52,7 +52,7 @@ app.use((err, req, res, next) => {
   next(err);
 });
 
-const PORT = process.env.PORT || 1000;
+const PORT = 1000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT} - 50MB ready`);
 });
