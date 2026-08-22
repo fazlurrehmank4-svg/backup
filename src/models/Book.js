@@ -2,24 +2,22 @@ const mongoose = require('mongoose');
 
 const chapterSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  titleArabic: { type: String },
+  author: String,
   startPage: { type: Number, required: true },
   endPage: { type: Number, required: true },
-  description: { type: String }
 });
 
 const bookSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  titleArabic: { type: String },
+  titleArabic: String,
   author: { type: String, required: true },
-  description: { type: String },
-  coverUrl: { type: String },
-  pdfUrl: { type: String, required: true }, // ONE PDF ONLY
-  filebaseKey: { type: String }, // filebase file name
-  totalPages: { type: Number },
-  category: { type: String, default: "Islamic" },
-  chapters: [chapterSchema], // Chapters are just page ranges!
-  createdAt: { type: Date, default: Date.now }
-});
+  description: String,
+  coverUrl: String,
+  pdfUrl: { type: String, required: true }, // Filebase URL
+  filebaseKey: String,
+  totalPages: Number,
+  chapters: [chapterSchema],
+  category: { type: String, default: "Islamic" }
+}, { timestamps: true });
 
 module.exports = mongoose.model('Book', bookSchema);
