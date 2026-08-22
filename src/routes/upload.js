@@ -38,7 +38,7 @@ const upload = multer({
 const s3 = new AWS.S3({
   endpoint:
     process.env.FILEBASE_ENDPOINT ||
-    'https://s3.filebase.com',
+    'https://s3.filebase.io',
 
   accessKeyId: process.env.FILEBASE_ACCESS_KEY,
   secretAccessKey: process.env.FILEBASE_SECRET_KEY,
