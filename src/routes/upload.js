@@ -43,7 +43,7 @@ const s3 = new AWS.S3({
   accessKeyId: process.env.FILEBASE_ACCESS_KEY,
   secretAccessKey: process.env.FILEBASE_SECRET_KEY,
 
-  region: 'us-east-1',
+  region: 'auto',
 
   s3ForcePathStyle: true,
 
