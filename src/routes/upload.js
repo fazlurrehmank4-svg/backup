@@ -1,93 +1,51 @@
 const express = require('express');
 const multer = require('multer');
-const AWS = require('aws-sdk');
+const { createClient } = require('@supabase/supabase-js');
+const Book = require('../models/Book');
+
 const router = express.Router();
+const upload = multer({ storage: multer.memoryStorage() });
 
-// Try to load auth middleware, if exists use it else skip
-let authMiddleware;
-try {
-  authMiddleware = require('../middleware/auth');
-} catch (e) {
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_KEY
+);
+
+router.post('/upload', upload.single('pdf'), async (req, res) => {
   try {
-    authMiddleware = require('../middlewares/auth');
-  } catch (e2) {
-    // If no auth middleware found, create dummy that allows all
-    authMiddleware = (req, res, next) => next();
-    console.log('⚠️  Auth middleware not found, upload route will be open');
-  }
-}
+    const fileName = `books/${Date.now()}-${req.file.originalname}`;
+    console.log('Uploading to Supabase:', fileName);
 
-// Filebase S3 Configuration
-const s3 = new AWS.S3({
-  endpoint: 'https://s3.filebase.com',
-  accessKeyId: process.env.FILEBASE_ACCESS_KEY,
-  secretAccessKey: process.env.FILEBASE_SECRET_KEY,
-  s3ForcePathStyle: true,
-  signatureVersion: 'v4',
-  region: 'us-east-1',
-});
+    const { error } = await supabase.storage
+      .from(process.env.SUPABASE_BUCKET || 'almaas-pdfs')
+      .upload(fileName, req.file.buffer, {
+        contentType: 'application/pdf',
+        upsert: true
+      });
 
-const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-  fileFilter: (req, file, cb) => {
-    // Allow images and PDFs
-    if (file.mimetype.startsWith('image/') || file.mimetype === 'application/pdf') {
-      cb(null, true);
-    } else {
-      cb(new Error('Only images and PDFs allowed'), false);
-    }
-  }
-});
+    if (error) throw error;
 
-/**
- * POST /api/upload
- * Uploads file to Filebase and returns public URL
- * Requires Bearer token
- */
-router.post('/', authMiddleware, upload.single('file'), async (req, res) => {
-  try {
-    if (!req.file) {
-      return res.status(400).json({ message: 'No file uploaded. Send file field.' });
-    }
+    const { data } = supabase.storage
+      .from(process.env.SUPABASE_BUCKET || 'almaas-pdfs')
+      .getPublicUrl(fileName);
 
-    if (!process.env.FILEBASE_BUCKET) {
-      return res.status(500).json({ message: 'FILEBASE_BUCKET not configured on server' });
-    }
+    const publicUrl = data.publicUrl;
+    console.log('SUCCESS:', publicUrl);
 
-    const file = req.file;
-    // Clean filename: 1700000000-my-book-cover.jpg
-    const cleanName = file.originalname.replace(/\s+/g, '-').replace(/[^a-zA-Z0-9.-]/g, '');
-    const fileName = `${Date.now()}-${cleanName}`;
-
-    const params = {
-      Bucket: process.env.FILEBASE_BUCKET,
-      Key: fileName,
-      Body: file.buffer,
-      ContentType: file.mimetype,
-      ACL: 'public-read',
-    };
-
-    console.log(`📤 Uploading ${fileName} (${file.mimetype}, ${file.size} bytes) to ${params.Bucket}`);
-
-    const result = await s3.upload(params).promise();
-
-    console.log(`✅ Uploaded: ${result.Location}`);
-
-    res.status(200).json({
-      url: result.Location,
-      fileName: fileName,
-      size: file.size,
-      mimetype: file.mimetype,
-      message: 'File uploaded successfully',
+    const book = await Book.create({
+      title: req.body.title || req.file.originalname.replace('.pdf',''),
+      pdfUrl: publicUrl,
+      fileUrl: publicUrl,
+      url: publicUrl,
+      author: req.body.author || 'Almaas'
     });
 
-  } catch (error) {
-    console.error('❌ Upload error:', error);
-    res.status(500).json({
-      message: 'Upload failed',
-      error: error.message,
-    });
+    console.log('Saved to MongoDB:', book.title);
+    res.json({ success: true, url: publicUrl, book });
+
+  } catch (err) {
+    console.error('Upload error:', err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 

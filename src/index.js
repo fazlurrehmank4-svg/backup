@@ -1,33 +1,58 @@
 const express = require('express');
-const mongoose = require('mongoose');
 const cors = require('cors');
+const mongoose = require('mongoose');
 require('dotenv').config();
 
 const app = express();
 
-app.use(cors({ origin: '*' }));
-app.use(express.json({ limit: '10mb' }));
+// ===== CORS FIRST FOR FLUTTER WEB =====
+app.use(cors({
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE'],
+  allowedHeaders: ['Content-Type', 'Authorization']
+}));
 
+// ===== 50MB LIMIT FOR 7MB PDF =====
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
+
+// Timeout fix for Render Free
+app.use((req, res, next) => {
+  req.setTimeout(120000);
+  res.setTimeout(120000);
+  next();
+});
+
+// MongoDB
+mongoose.connect(process.env.MONGODB_URI)
+  .then(() => console.log("✅ MongoDB Connected"))
+  .catch(err => console.log("❌ MongoDB Error:", err));
+
+// Routes
 const bookRoutes = require('./routes/bookRoutes');
-const chapterRoutes = require('./routes/chapterRoutes');
+const uploadRoutes = require('./routes/upload');
 const authRoutes = require('./routes/authRoutes');
 
 app.use('/api/books', bookRoutes);
-app.use('/api/chapters', chapterRoutes);
+app.use('/api', uploadRoutes);
 app.use('/api/auth', authRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ message: 'Almaas Backend API is Running ✅', version: '100% Complete' });
+  res.send("Almaas Backend Running - 50MB Upload Enabled");
 });
 
-const PORT = process.env.PORT || 10000;
-const MONGODB_URI = process.env.MONGODB_URI || process.env.DATABASE_URL;
+// Multer error handler
+app.use((err, req, res, next) => {
+  if (err.code === 'LIMIT_FILE_SIZE') {
+    return res.status(400).json({ error: "PDF too large! Max 50MB" });
+  }
+  if (err.message) {
+    return res.status(400).json({ error: err.message });
+  }
+  next(err);
+});
 
-mongoose.connect(MONGODB_URI)
-  .then(() => {
-    console.log('MongoDB Connected ✅');
-    app.listen(PORT, () => console.log(`Server running on port ${PORT} ✅`));
-  })
-  .catch(err => {
-    console.error('DB Error:', err.message);
-  });
+const PORT = 10000;
+app.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT} - 50MB ready`);
+});
