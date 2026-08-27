@@ -1,22 +1,23 @@
 const express = require('express');
 const router = express.Router();
 const Book = require('../models/Book');
+const { cacheMiddleware, clearCache } = require('../middleware/cache');
 
-// =========== GET ALL BOOKS - USER APP USES THIS ===========
-router.get('/', async (req, res) => {
+// =========== GET ALL BOOKS - CACHED 5 MINS - 10x FAST ===========
+router.get('/', cacheMiddleware('books'), async (req, res) => {
   try {
     console.log("📚 GET /api/books - Fetching from MongoDB");
     const books = await Book.find().sort({ createdAt: -1 });
     console.log(`✅ Found ${books.length} books in MongoDB`);
-    res.json(books); // Must be array for user app
+    res.json(books);
   } catch (e) {
     console.error("❌ GET books error:", e);
     res.status(500).json({ error: e.message });
   }
 });
 
-// =========== GET ONE BOOK WITH CHAPTERS ===========
-router.get('/:id', async (req, res) => {
+// =========== GET ONE BOOK WITH CHAPTERS - CACHED ===========
+router.get('/:id', cacheMiddleware('book_'), async (req, res) => {
   try {
     const book = await Book.findById(req.params.id);
     if (!book) return res.status(404).json({ error: "Book not found" });
@@ -26,7 +27,7 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// =========== ADD BOOK - ONE PDF + MANY CHAPTERS ===========
+// =========== ADD BOOK ===========
 router.post('/', async (req, res) => {
   try {
     console.log("📥 POST /api/books - Body:", JSON.stringify(req.body).substring(0, 500));
@@ -44,15 +45,13 @@ router.post('/', async (req, res) => {
       category
     } = req.body;
 
-    if (!title ||!author) {
+    if (!title || !author) {
       return res.status(400).json({ error: "title and author required" });
     }
     if (!pdfUrl) {
-      console.log("❌ pdfUrl missing! Did you call /api/upload first?");
       return res.status(400).json({ error: "pdfUrl required! Upload PDF to /api/upload first" });
     }
 
-    // Validate chapters
     if (chapters && chapters.length > 0) {
       for (let ch of chapters) {
         if (!ch.title || ch.startPage == null || ch.endPage == null) {
@@ -70,7 +69,7 @@ router.post('/', async (req, res) => {
       author: author.trim(),
       description: description || "",
       coverUrl: coverUrl || "",
-      pdfUrl, // ONE PDF from Filebase
+      pdfUrl,
       filebaseKey: filebaseKey || "",
       totalPages: totalPages || 0,
       chapters: chapters || [],
@@ -78,26 +77,28 @@ router.post('/', async (req, res) => {
     });
 
     const savedBook = await newBook.save();
+    console.log(`✅ Book SAVED: ${savedBook._id}`);
 
-    console.log(`✅ Book SAVED to MongoDB: ${savedBook._id} - ${savedBook.title}`);
+    clearCache('books'); // 🗑️ Clear cache!
+    clearCache('book_');
 
-    // IMPORTANT: Return direct book for Flutter compatibility
     res.status(201).json(savedBook);
 
   } catch (e) {
-    console.error("❌ POST /api/books error:", e);
-    // If MongoDB not connected, you will see error here!
-    if (e.message.includes('buffering timed out') || e.message.includes('not connected')) {
-      return res.status(500).json({ error: "MongoDB not connected! Check MONGODB_URI env" });
+    console.error("❌ POST error:", e);
+    if (e.message.includes('buffering timed out')) {
+      return res.status(500).json({ error: "MongoDB not connected! Check MONGODB_URI" });
     }
     res.status(500).json({ error: e.message });
   }
 });
 
-// =========== UPDATE BOOK CHAPTERS ===========
+// =========== UPDATE BOOK ===========
 router.put('/:id', async (req, res) => {
   try {
     const updated = await Book.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    clearCache('books');
+    clearCache('book_');
     res.json(updated);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -108,6 +109,8 @@ router.put('/:id', async (req, res) => {
 router.delete('/:id', async (req, res) => {
   try {
     await Book.findByIdAndDelete(req.params.id);
+    clearCache('books');
+    clearCache('book_');
     res.json({ message: "Book deleted" });
   } catch (e) {
     res.status(500).json({ error: e.message });
