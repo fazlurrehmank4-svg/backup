@@ -44,6 +44,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/books', require('./routes/books'));
 app.use('/api/chapters', require('./routes/chapters'));
 app.use('/api/upload', require('./routes/upload'));
+app.use('/api/app', require('./routes/appVersionRoutes'));
 
 app.get('/', (req,res)=>{
   res.json({

@@ -7,6 +7,9 @@ require('dotenv').config();
 
 const app = express();
 
+// ===== FIX FOR RENDER - ADD THIS LINE =====
+app.set('trust proxy', 1);
+
 // ===== SECURITY HEADERS =====
 app.use(helmet());
 
@@ -50,10 +53,12 @@ mongoose.connect(process.env.MONGODB_URI || process.env.MONGO_URI)
 const bookRoutes = require('./routes/bookRoutes');
 const uploadRoutes = require('./routes/upload');
 const authRoutes = require('./routes/authRoutes');
+const appVersionRoutes = require('./routes/appVersionRoutes');
 
 app.use('/api/books', bookRoutes);
 app.use('/api', uploadRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/app', appVersionRoutes);
 
 app.get('/', (req, res) => {
   res.json({
